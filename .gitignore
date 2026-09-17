@@ -1,0 +1,14 @@
+/build/
+/out/
+/work/
+/outputs/
+/.vs/
+*.obj
+*.o
+*.exe
+*.pdb
+*.ilk
+*.idb
+*.user
+*.suo
+CMakeUserPresets.json
