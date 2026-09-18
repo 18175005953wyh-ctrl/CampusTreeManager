@@ -4,6 +4,8 @@
 
 本仓库还包含独立的 Python 工具 [C Project Analyzer](c-project-analyzer/README.md)，可以统计 C 项目的代码、注释和空行，并生成 JSON 与 Markdown 报告。
 
+另一个 C11 练习项目 [Campus Route Planner](campus-route-planner/README.md) 使用邻接矩阵与 Dijkstra 算法，查询校园地点之间的最短路线。
+
 ## 项目背景
 
 校园绿化信息可以按树木编号、树种、位置、胸径和健康状态整理。本项目把这些信息作为练习对象，将 C 语言中的结构体、数组、函数、字符串处理和文件读写组合成一个可运行的小程序。界面使用英文，文档使用中文。
