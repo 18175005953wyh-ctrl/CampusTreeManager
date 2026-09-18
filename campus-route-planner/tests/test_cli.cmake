@@ -1,0 +1,66 @@
+if(NOT DEFINED APP OR NOT DEFINED SOURCE OR NOT DEFINED WORK)
+    message(FATAL_ERROR "APP, SOURCE and WORK are required")
+endif()
+file(MAKE_DIRECTORY "${WORK}")
+set(passed 0)
+
+function(run_case name input directory expected_exit)
+    file(WRITE "${WORK}/input.txt" "${input}")
+    execute_process(COMMAND "${APP}" --data "${directory}"
+        INPUT_FILE "${WORK}/input.txt" WORKING_DIRECTORY "${WORK}"
+        OUTPUT_VARIABLE output ERROR_VARIABLE errors RESULT_VARIABLE result TIMEOUT 10)
+    if(NOT "${result}" STREQUAL "${expected_exit}")
+        message(FATAL_ERROR "${name}: exit ${result}, expected ${expected_exit}\n${output}\n${errors}")
+    endif()
+    foreach(fragment IN LISTS ARGN)
+        string(FIND "${output}\n${errors}" "${fragment}" position)
+        if(position EQUAL -1)
+            message(FATAL_ERROR "${name}: missing '${fragment}'\n${output}\n${errors}")
+        endif()
+    endforeach()
+    math(EXPR next "${passed} + 1")
+    set(passed ${next} PARENT_SCOPE)
+    message(STATUS "[PASS] ${name}")
+endfunction()
+
+run_case("sample route and summary" "1\n2\n3\n1\n2\n5\n0\n" "${SOURCE}/data" 0
+    "Loaded 12 locations." "Main Gate -> Central Square -> Library" "Total distance: 380 m" "Roads: 18" "Education: 2")
+string(REPEAT "9" 600 long_input)
+run_case("invalid and long input recovery" "\nabc\n-1\n${long_input}\n3\n999\n1\n999\n2\n0\n" "${SOURCE}/data" 0
+    "Invalid input." "Unknown location ID." "Total distance: 380 m")
+run_case("same start and destination" "3\n1\n1\n0\n" "${SOURCE}/data" 0
+    "Start and destination are the same" "Total distance: 0 m")
+run_case("search and empty keyword" "4\n\n   \nBuIlDiNg\n4\nnot-present\n0\n" "${SOURCE}/data" 0
+    "Invalid keyword." "Teaching Building" "Administration Building" "No matching locations.")
+run_case("EOF during route entry" "3\n1\n" "${SOURCE}/data" 0 "Goodbye.")
+run_case("missing directory" "" "${WORK}/missing" 1 "Cannot open map file" "Map load failed")
+file(MAKE_DIRECTORY "${WORK}/empty")
+file(WRITE "${WORK}/empty/locations.csv" "\n")
+file(WRITE "${WORK}/empty/roads.csv" "\n")
+run_case("empty map" "1\n2\n3\n5\n0\n" "${WORK}/empty" 0
+    "No locations loaded." "No direct roads loaded." "Average road length: 0.00 m")
+file(MAKE_DIRECTORY "${WORK}/disconnected")
+configure_file("${SOURCE}/tests/fixtures/test_locations.csv" "${WORK}/disconnected/locations.csv" COPYONLY)
+configure_file("${SOURCE}/tests/fixtures/disconnected_roads.csv" "${WORK}/disconnected/roads.csv" COPYONLY)
+run_case("unreachable destination" "3\n10\n40\n0\n" "${WORK}/disconnected" 0 "No route available")
+file(MAKE_DIRECTORY "${WORK}/broken")
+file(WRITE "${WORK}/broken/locations.csv" "1,Main Gate,Entrance\nbroken row\n2,Library,Study\n")
+file(WRITE "${WORK}/broken/roads.csv" "1,2,-1\n1,2,30\n")
+run_case("damaged records skipped" "3\n1\n2\n0\n" "${WORK}/broken" 0 "Warning:" "Total distance: 30 m")
+
+file(WRITE "${WORK}/input.txt" "0\n")
+execute_process(COMMAND "${APP}" INPUT_FILE "${WORK}/input.txt" WORKING_DIRECTORY "${WORK}"
+    OUTPUT_VARIABLE output ERROR_VARIABLE errors RESULT_VARIABLE result TIMEOUT 10)
+if(NOT result EQUAL 0 OR NOT output MATCHES "Loaded 12 locations")
+    message(FATAL_ERROR "Executable-relative data lookup failed: ${output} ${errors}")
+endif()
+math(EXPR passed "${passed} + 1")
+message(STATUS "[PASS] executable-relative data lookup")
+execute_process(COMMAND "${APP}" --bad-option WORKING_DIRECTORY "${WORK}"
+    OUTPUT_VARIABLE output ERROR_VARIABLE errors RESULT_VARIABLE result TIMEOUT 10)
+if(NOT result EQUAL 1 OR NOT errors MATCHES "Usage:")
+    message(FATAL_ERROR "Invalid argument handling failed")
+endif()
+math(EXPR passed "${passed} + 1")
+message(STATUS "[PASS] invalid command arguments")
+message(STATUS "${passed} CLI cases passed")
