@@ -8,6 +8,7 @@
 #include <string.h>
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
@@ -352,13 +353,13 @@ static int ensure_data_directory(void)
     return 0;
 }
 
-int save_to_file(const Tree trees[], int count, const char *filename)
+static int write_records(const Tree trees[], int count, const char *temporary_path)
 {
     FILE *file;
     int i, ok = 1;
-    if (!ensure_data_directory()) return 0;
-    file = fopen(filename, "w");
-    if (file == NULL) { perror("Cannot open data file for writing"); return 0; }
+    /* Exclusive creation: never truncate another save's or a stale temporary file. */
+    file = fopen(temporary_path, "wx");
+    if (file == NULL) { perror("Cannot create temporary data file"); return 0; }
     for (i = 0; i < count; ++i) {
         /* Nine significant digits preserve a binary32 float across reloads. */
         if (fprintf(file, "%d,%s,%s,%.9g,%d\n", trees[i].id, trees[i].species,
@@ -367,10 +368,46 @@ int save_to_file(const Tree trees[], int count, const char *filename)
             break;
         }
     }
+    if (fflush(file) != 0) ok = 0;
     if (fclose(file) != 0) ok = 0;
-    if (ok) printf("Saved %d tree(s).\n", count);
-    else fputs("Save failed while writing data.\n", stderr);
+    if (!ok) {
+        fputs("Save failed while writing temporary data; original file preserved.\n", stderr);
+        if (remove(temporary_path) != 0) perror("Cannot remove temporary data file");
+    }
     return ok;
+}
+
+static int replace_file(const char *temporary_path, const char *target_path)
+{
+#ifdef _WIN32
+    if (MoveFileExA(temporary_path, target_path, MOVEFILE_REPLACE_EXISTING)) return 1;
+    fprintf(stderr, "Cannot replace data file (Windows error %lu).\n", (unsigned long)GetLastError());
+    return 0;
+#else
+    if (rename(temporary_path, target_path) == 0) return 1;
+    perror("Cannot replace data file");
+    return 0;
+#endif
+}
+
+int save_to_file(const Tree trees[], int count, const char *filename)
+{
+    char temporary_path[1024];
+    int length;
+    if (count < 0 || count > MAX_TREES || filename == NULL) return 0;
+    length = snprintf(temporary_path, sizeof temporary_path, "%s.tmp", filename);
+    if (length < 0 || (size_t)length >= sizeof temporary_path) {
+        fputs("Data path too long; not saved.\n", stderr);
+        return 0;
+    }
+    if (!ensure_data_directory() || !write_records(trees, count, temporary_path)) return 0;
+    if (!replace_file(temporary_path, filename)) {
+        fputs("Save failed; original file preserved.\n", stderr);
+        if (remove(temporary_path) != 0) perror("Cannot remove temporary data file");
+        return 0;
+    }
+    printf("Saved %d tree(s).\n", count);
+    return 1;
 }
 
 static int parse_record(char *line, Tree *tree)
