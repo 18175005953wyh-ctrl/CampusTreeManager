@@ -139,12 +139,12 @@ static void print_tree(const Tree *tree)
            health_name(tree->health));
 }
 
-void add_tree(Tree trees[], int *count)
+int add_tree(Tree trees[], int *count)
 {
     Tree tree;
     char buffer[256];
     int status;
-    if (*count >= MAX_TREES) { puts("Storage full (100 trees)."); return; }
+    if (*count >= MAX_TREES) { puts("Storage full (100 trees)."); return 0; }
     for (;;) {
         if (!read_integer("ID: ", 1, INT_MAX, &tree.id)) goto cancelled;
         if (find_id(trees, *count, tree.id) < 0) break;
@@ -163,9 +163,109 @@ void add_tree(Tree trees[], int *count)
     if (!read_integer("Health (1=Healthy, 2=Average, 3=Poor): ", 1, 3, &tree.health)) goto cancelled;
     trees[(*count)++] = tree;
     puts("Tree added.");
-    return;
+    return 1;
 cancelled:
     puts("Input ended. Incomplete tree was not added.");
+    return 0;
+}
+
+/* No trimming: only a complete single y/Y confirms a destructive operation. */
+static int confirm(const char *prompt)
+{
+    char buffer[256];
+    fputs(prompt, stdout);
+    fflush(stdout);
+    return read_line(stdin, buffer, (int)sizeof buffer) == 1 &&
+           (strcmp(buffer, "y") == 0 || strcmp(buffer, "Y") == 0);
+}
+
+/* EOF and :cancel discard the entire staged edit. Empty input means keep. */
+static int edit_line(const char *prompt, char buffer[256])
+{
+    int status;
+    char *value;
+    for (;;) {
+        fputs(prompt, stdout);
+        fflush(stdout);
+        status = read_line(stdin, buffer, 256);
+        if (status == 0) return 0;
+        if (status < 0) { puts("Input too long. Try again or enter :cancel."); continue; }
+        value = trim(buffer);
+        memmove(buffer, value, strlen(value) + 1);
+        return strcmp(buffer, ":cancel") != 0;
+    }
+}
+
+static int edit_text(const char *prompt, char *destination, size_t capacity)
+{
+    char buffer[256];
+    for (;;) {
+        if (!edit_line(prompt, buffer)) return 0;
+        if (buffer[0] == '\0') return 1;
+        if (valid_text(buffer, capacity)) {
+            memcpy(destination, buffer, strlen(buffer) + 1);
+            return 1;
+        }
+        printf("Invalid text. Use 1-%zu bytes, without commas or control characters.\n", capacity - 1);
+    }
+}
+
+int edit_tree(Tree trees[], int count)
+{
+    int id, index;
+    Tree updated;
+    char buffer[256];
+    if (count == 0) { puts("No tree records."); return 0; }
+    if (!read_integer("ID to edit (0=cancel): ", 0, INT_MAX, &id) || id == 0) return 0;
+    index = find_id(trees, count, id);
+    if (index < 0) { puts("No matching trees."); return 0; }
+    print_header();
+    print_tree(&trees[index]);
+    updated = trees[index];
+    puts("Enter keeps the current value; :cancel cancels the entire edit. ID cannot change.");
+    if (!edit_text("Species: ", updated.species, sizeof updated.species) ||
+        !edit_text("Location: ", updated.location, sizeof updated.location)) goto cancelled_edit;
+    for (;;) {
+        if (!edit_line("Diameter (cm): ", buffer)) goto cancelled_edit;
+        if (buffer[0] == '\0' || parse_diameter(buffer, &updated.diameter)) break;
+        puts("Invalid diameter. Enter a finite number greater than 0.");
+    }
+    for (;;) {
+        if (!edit_line("Health (1=Healthy, 2=Average, 3=Poor): ", buffer)) goto cancelled_edit;
+        if (buffer[0] == '\0' || parse_integer(buffer, 1, 3, &updated.health)) break;
+        puts("Invalid input. Enter an integer from 1 to 3.");
+    }
+    if (strcmp(updated.species, trees[index].species) == 0 &&
+        strcmp(updated.location, trees[index].location) == 0 &&
+        updated.diameter == trees[index].diameter && updated.health == trees[index].health) {
+        puts("No changes.");
+        return 0;
+    }
+    puts("Proposed record:");
+    print_tree(&updated);
+    if (!confirm("Apply changes? (y/N): ")) goto cancelled_edit;
+    trees[index] = updated;
+    puts("Tree updated.");
+    return 1;
+cancelled_edit:
+    puts("Edit cancelled. Original record unchanged.");
+    return 0;
+}
+
+int delete_tree(Tree trees[], int *count)
+{
+    int id, index, i;
+    if (*count == 0) { puts("No tree records."); return 0; }
+    if (!read_integer("ID to delete (0=cancel): ", 0, INT_MAX, &id) || id == 0) return 0;
+    index = find_id(trees, *count, id);
+    if (index < 0) { puts("No matching trees."); return 0; }
+    print_header();
+    print_tree(&trees[index]);
+    if (!confirm("Delete this tree? (y/N): ")) { puts("Delete cancelled."); return 0; }
+    for (i = index; i < *count - 1; ++i) trees[i] = trees[i + 1];
+    --(*count);
+    puts("Tree deleted.");
+    return 1;
 }
 
 void list_trees(const Tree trees[], int count)
@@ -202,19 +302,21 @@ void search_tree(const Tree trees[], int count)
     }
 }
 
-void sort_by_diameter(Tree trees[], int count)
+int sort_by_diameter(Tree trees[], int count)
 {
-    int i, j;
+    int i, j, changed = 0;
     for (i = 0; i < count - 1; ++i) {
         for (j = 0; j < count - 1 - i; ++j) {
             if (trees[j].diameter < trees[j + 1].diameter) {
                 Tree temporary = trees[j];
                 trees[j] = trees[j + 1];
                 trees[j + 1] = temporary;
+                changed = 1;
             }
         }
     }
     list_trees(trees, count);
+    return changed;
 }
 
 void show_statistics(const Tree trees[], int count)
