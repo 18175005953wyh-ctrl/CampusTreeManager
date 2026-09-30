@@ -2,9 +2,7 @@
 
 使用 C11 编写的命令行练习项目，通过固定数组管理最多 100 条校园树木记录。
 
-本仓库还包含独立的 Python 工具 [C Project Analyzer](c-project-analyzer/README.md)，可以统计 C 项目的代码、注释和空行，并生成 JSON 与 Markdown 报告。
 
-另一个 C11 练习项目 [Campus Route Planner](campus-route-planner/README.md) 使用邻接矩阵与 Dijkstra 算法，查询校园地点之间的最短路线。
 
 ## 项目背景
 
