@@ -6,11 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #ifdef _WIN32
 #include <direct.h>
 #include <windows.h>
-#else
-#include <sys/stat.h>
 #endif
 
 /* 1: complete line, 0: EOF, -1: overlong line. Drain rejected input. */
@@ -344,11 +343,22 @@ void show_statistics(const Tree trees[], int count)
 static int ensure_data_directory(void)
 {
 #ifdef _WIN32
+    struct _stat info;
     int result = _mkdir("data");
 #else
+    struct stat info;
     int result = mkdir("data", 0777);
 #endif
-    if (result == 0 || errno == EEXIST) return 1;
+    if (result == 0) return 1;
+    if (errno == EEXIST) {
+#ifdef _WIN32
+        if (_stat("data", &info) == 0 && (info.st_mode & _S_IFMT) == _S_IFDIR) return 1;
+#else
+        if (stat("data", &info) == 0 && S_ISDIR(info.st_mode)) return 1;
+#endif
+        fputs("Data path is not an accessible directory.\n", stderr);
+        return 0;
+    }
     perror("Cannot create data directory");
     return 0;
 }
