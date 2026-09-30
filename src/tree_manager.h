@@ -14,10 +14,13 @@ typedef struct {
 
 /* Returns 0 on end of input; otherwise retries until a valid integer. */
 int read_integer(const char *prompt, int minimum, int maximum, int *value);
-void add_tree(Tree trees[], int *count);
+/* Mutators return 1 only when data/order actually changes. */
+int add_tree(Tree trees[], int *count);
+int edit_tree(Tree trees[], int count);
+int delete_tree(Tree trees[], int *count);
 void list_trees(const Tree trees[], int count);
 void search_tree(const Tree trees[], int count);
-void sort_by_diameter(Tree trees[], int count);
+int sort_by_diameter(Tree trees[], int count);
 void show_statistics(const Tree trees[], int count);
 int save_to_file(const Tree trees[], int count, const char *filename);
 /* 1: loaded (possibly with skipped rows); 0: missing; -1: I/O error. */
